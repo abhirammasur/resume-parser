@@ -1,4 +1,8 @@
 import os
+
+if not os.path.exists('uploads'):
+    os.makedirs('uploads')
+import os
 from flask import Flask, render_template, request, redirect
 from config import Config
 from models.db import db, Candidate
