@@ -1,47 +1,59 @@
 import os
+import sys
+from flask import Flask, request, jsonify, render_template
+from werkzeug.utils import secure_filename
 
-if not os.path.exists('uploads'):
-    os.makedirs('uploads')
-import os
-from flask import Flask, render_template, request, redirect
-from config import Config
-from models.db import db, Candidate
-from parser.resume_parser import parse_resume
+# Fix import path (important for Render)
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from models import extract_text_from_resume
 
 app = Flask(__name__)
-app.config.from_object(Config)
 
-db.init_app(app)
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"pdf", "docx"}
 
-with app.app_context():
-    db.create_all()
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-@app.route('/')
-def index():
-    candidates = Candidate.query.all()
-    return render_template('index.html', candidates=candidates)
+# Ensure upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    file = request.files['resume']
 
-    if file:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        data = parse_resume(file_path)
 
-        candidate = Candidate(
-            name=data['name'],
-            email=data['email'],
-            skills=data['skills'],
-            education=data['education']
-        )
+@app.route("/")
+def home():
+    return "Resume Parser is running 🚀"
 
-        db.session.add(candidate)
-        db.session.commit()
 
-    return redirect('/')
+@app.route("/upload", methods=["POST"])
+def upload_resume():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"})
+
+    file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"})
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(filepath)
+
+        # Extract text using models.py
+        extracted_text = extract_text_from_resume(filepath)
+
+        return jsonify({
+            "message": "File processed successfully",
+            "extracted_text": extracted_text[:1000]  # limit output
+        })
+
+    return jsonify({"error": "Invalid file type"})
+
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=10000)
